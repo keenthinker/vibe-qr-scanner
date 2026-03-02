@@ -1,0 +1,695 @@
+<!-- JavaScript dependencies
+PDFJS 3.11.174 is the last version supporting ES modules without needing a build step
+https://www.jsdelivr.com/package/npm/pdfjs-dist?tab=files&path=build&version=3.11.174
+- download 'pdf.min.js' and 'pdf.worker.min.js'
+
+https://github.com/nimiq/qr-scanner/tree/master
+- download 'qr-scanner.umd.min.js' and 'qr-scanner-worker.min.js'
+
+Start Chrome with '--allow-file-access-from-files' to enable loading the worker scripts from local files
+"c:\Program Files (x86)\Google\Chrome\Application\chrome.exe" --disable-web-security --allow-file-access-from-files
+-->
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Vibe QR Code Scanner</title>
+  <style>
+    /* Global Styles */
+    :root {
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --success-hover: #059669;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      margin: 0;
+      padding: 5px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    header h1 {
+      font-size: 2.0rem;
+      margin-bottom: 10px;
+      color: #0f172a;
+    }
+
+    header p {
+      color: var(--text-muted);
+    }
+
+    /* Upload Section */
+    .upload-section {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .file-label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 60px;
+      background: var(--card-bg);
+      border: 2px dashed var(--primary);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .file-label:hover {
+      background: #eff6ff;
+    }
+
+    .file-label span {
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    #file-selector {
+      display: none;
+    }
+
+    /* Pagination Styling */
+    .nav-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 10px;
+    }
+
+    .nav-btn {
+      background: white;
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .nav-btn:hover {
+      background: #f1f5f9;
+    }
+
+    /* Main Workspace Layout */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 30px;
+    }
+
+    @media (min-width: 1024px) {
+      .workspace {
+        grid-template-columns: 2fr 1fr;
+      }
+    }
+
+    /* PDF View Area */
+    .pdf-card {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+    }
+
+    #pdfWrapper {
+      position: relative;
+      display: inline-block;
+    }
+
+    #pdfCanvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    /* Selection Box */
+    #selection {
+      position: absolute;
+      border: 2px dashed var(--primary);
+      background-color: rgba(59, 130, 246, 0.2);
+      cursor: move;
+      pointer-events: none; /* Allows click-through to wrapper for logic */
+    }
+
+    .handle {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: var(--primary);
+      border: 1px solid white;
+    }
+
+    .nw { top: -5px; left: -5px; cursor: nw-resize; }
+    .ne { top: -5px; right: -5px; cursor: ne-resize; }
+    .sw { bottom: -5px; left: -5px; cursor: sw-resize; }
+    .se { bottom: -5px; right: -5px; cursor: se-resize; }
+
+    /* Controls Sidebar */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 25px;
+      position: sticky;
+      top: 20px;
+    }
+
+    .control-card {
+      background: var(--card-bg);
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .control-card h2, .control-card h3 {
+      margin-top: 0;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 15px;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-blue {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-blue:hover { background: var(--primary-hover); }
+
+    .btn-green {
+      background: var(--success);
+      color: white;
+    }
+
+    .btn-green:hover { background: var(--success-hover); }
+
+    /* Preview and Result Area */
+    .preview-box {
+      border: 2px solid #f1f5f9;
+      border-radius: 8px;
+      background: #f8fafc;
+      min-height: 150px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px;
+    }
+
+    #cropCanvas {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .result-container {
+      position: relative;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+
+    .copy-btn:hover {
+      color: var(--primary);
+    }
+
+    #linkArea {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 15px;
+      min-height: 60px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fafc;
+      color: var(--primary);
+      text-decoration: none;
+      font-family: monospace;
+      font-size: 0.9rem;
+      word-break: break-all; /* Ensures long URLs don't break the layout */
+      transition: all 0.2s ease;
+      border-left: 4px solid var(--border);
+    }
+
+    /* Hover effect only if there is a link */
+    #linkArea[href^="http"]:hover {
+      background: #eff6ff;
+      border-color: var(--primary);
+      border-left-color: var(--primary);
+    }
+
+    /* Custom Placeholder Logic for <a> tag */
+    #linkArea:empty::before {
+      content: attr(placeholder);
+      color: var(--text-muted);
+      font-style: italic;
+      font-family: sans-serif;
+    }
+
+    /* Style for errors (when no QR is found) */
+    .link-error {
+      color: #ef4444 !important;
+      border-left-color: #ef4444 !important;
+    }
+
+    .btn-purple {
+      background: #8b5cf6;
+      color: white;
+    }
+
+    .btn-purple:hover {
+      background: #7c3aed;
+    }
+
+    /* Optional: Loading state for buttons */
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Container for the specific two-step process */
+    .crop-tool-group {
+      border: 2px dotted #cbd5e1; /* Soft grey-blue dotted border */
+      border-radius: 12px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background-color: #fcfcfc;
+      margin-top: 5px;
+    }
+
+    /* Small label text for the group */
+    .group-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      text-align: center;
+      margin-bottom: 5px;
+    }
+
+    /* Ensure the main btn-group has enough spacing */
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    /* Optional: adjust the button colors to look like a sequence */
+    #cropBtn {
+      background: #3b82f6;
+    }
+
+    #cropBtn:hover {
+      background: #306ccc;
+    }
+
+    #scanBtn {
+      background: #059669;
+    }
+
+    #scanBtn:hover {
+      background: #036647;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <!-- <h1>QRCode Reader</h1> -->
+      <p>PDF oder Bild auswählen, Bereich markieren und QR-Code extrahieren.</p>
+    </header>
+
+    <div class="upload-section">
+      <label class="file-label">
+        <span>PDF oder Bild Datei auswählen</span>
+        <input type="file" id="file-selector" accept=".pdf, image/*" class="hidden">
+      </label>
+    </div>
+
+    <!-- Navigation, loaded dynamically for PDF files -->
+    <div id="nav-anchor"></div>
+
+    <div class="workspace">
+      <!-- PDF View Area -->
+      <div class="pdf-card">
+        <div id="pdfWrapper">
+          <canvas id="pdfCanvas"></canvas>
+          <div id="selection" style="display:none">
+            <div class="handle nw"></div>
+            <div class="handle ne"></div>
+            <div class="handle sw"></div>
+            <div class="handle se"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls & Preview -->
+      <div class="sidebar">
+        <div class="control-card">
+          <h2>Werkzeuge</h2>
+          <div class="btn-group">
+            <button id="scanFullBtn" class="btn btn-purple">Vollbild scannen</button>
+            <div class="crop-tool-group">
+                 <span class="group-label">Ausschnitt-Werkzeuge</span>
+                <button id="cropBtn" class="btn btn-blue">1. Bereich zuschneiden</button>
+                <button id="scanBtn" class="btn btn-green">2. Ausschnitt scannen</button>
+                <span class="group-label" style="margin-top: 15px;">Ausschnitt-Vorschau</span>
+                <div class="preview-box">
+                  <canvas id="cropCanvas"></canvas>
+                </div>
+            </div>
+          </div>
+
+          <h3 style="margin-top: 30px;">Ergebnis</h3>
+            <div class="result-container">
+            <a href="#" id="linkArea" target="_blank" placeholder="Hier erscheinen die QR-Code-Links..."></a>
+            
+            <button onclick="copyLinks()" class="copy-btn" title="Kopieren">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+            </button>
+            </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./js/pdf.min.js"></script>
+  <script src="./js/qr-scanner.umd.min.js"></script>
+  <script>
+    //import QrScanner from './js/qr-scanner.min.js';
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './js/pdf.worker.min.js';
+
+    let pdfDoc = null;
+    let currentPage = 1;
+    const scale = 2.0;
+
+    const pdfCanvas = document.getElementById('pdfCanvas');
+    const pdfCtx = pdfCanvas.getContext('2d');
+    const cropCanvas = document.getElementById('cropCanvas');
+    const cropCtx = cropCanvas.getContext('2d');
+    const pdfWrapper = document.getElementById('pdfWrapper');
+    const selection = document.getElementById('selection');
+    const cropBtn = document.getElementById('cropBtn');
+    const scanBtn = document.getElementById('scanBtn');
+    const linkArea = document.getElementById('linkArea');
+
+    // --- Navigation Logic ---
+    const nav = document.createElement('div');
+    nav.className = 'nav-container';
+    nav.style.display = 'none'; // Hidden by default until a PDF is loaded
+    nav.innerHTML = `
+      <button id="prevPage" class="nav-btn">Zurück</button>
+      <span id="pageInfo">Seite 0 von 0</span>
+      <button id="nextPage" class="nav-btn">Weiter</button>
+    `;
+    document.getElementById('nav-anchor').appendChild(nav);
+
+    const prevPageBtn = document.getElementById('prevPage');
+    const nextPageBtn = document.getElementById('nextPage');
+    const pageInfo = document.getElementById('pageInfo');
+
+    function updatePageInfo() {
+      pageInfo.textContent = `Seite ${currentPage} von ${pdfDoc.numPages}`;
+    }
+
+    async function renderPage(pageNumber) {
+      const page = await pdfDoc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: scale });
+      
+      pdfCanvas.width = viewport.width;
+      pdfCanvas.height = viewport.height;
+      
+      selection.style.display = 'none'; 
+      
+      await page.render({
+        canvasContext: pdfCtx,
+        viewport: viewport
+      }).promise;
+    }
+
+    // --- Selection Logic ---
+    let isDragging = false;
+    let rectStart = { x: 0, y: 0 };
+
+    pdfWrapper.addEventListener('mousedown', (e) => {
+      // Calculate everything relative to the wrapper's top-left
+      const wrapperRect = pdfWrapper.getBoundingClientRect();
+      rectStart.x = e.clientX - wrapperRect.left;
+      rectStart.y = e.clientY - wrapperRect.top;
+      
+      isDragging = true;
+      
+      selection.style.left = rectStart.x + 'px';
+      selection.style.top = rectStart.y + 'px';
+      selection.style.width = '0px';
+      selection.style.height = '0px';
+      selection.style.display = 'block';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      
+      const wrapperRect = pdfWrapper.getBoundingClientRect();
+      const currentX = e.clientX - wrapperRect.left;
+      const currentY = e.clientY - wrapperRect.top;
+
+      const left = Math.min(rectStart.x, currentX);
+      const top = Math.min(rectStart.y, currentY);
+      const width = Math.abs(currentX - rectStart.x);
+      const height = Math.abs(currentY - rectStart.y);
+
+      selection.style.left = left + 'px';
+      selection.style.top = top + 'px';
+      selection.style.width = width + 'px';
+      selection.style.height = height + 'px';
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+
+    // --- Mapping Selection to Canvas Pixels ---
+    cropBtn.addEventListener('click', () => {
+      const selRect = selection.getBoundingClientRect();
+      const canRect = pdfCanvas.getBoundingClientRect();
+
+      // 1. Find where the selection is RELATIVE to the canvas on screen
+      const relativeX = selRect.left - canRect.left;
+      const relativeY = selRect.top - canRect.top;
+
+      // 2. Calculate the Ratio (Internal Resolution / CSS Display Size)
+      // It doesn't matter how big the canvas looks, find the multiplier to get to the real pixels.
+      const scaleX = pdfCanvas.width / canRect.width;
+      const scaleY = pdfCanvas.height / canRect.height;
+
+      // 3. Apply scale to get actual pixel coordinates
+      const sourceX = relativeX * scaleX;
+      const sourceY = relativeY * scaleY;
+      const sourceW = selRect.width * scaleX;
+      const sourceH = selRect.height * scaleY;
+
+      if (sourceW <= 1 || sourceH <= 1) {
+        alert("Bitte markiere zuerst einen Bereich.");
+        return;
+      }
+
+      // 4. Crop using the high-resolution source coordinates
+      cropCanvas.width = sourceW;
+      cropCanvas.height = sourceH;
+      cropCtx.clearRect(0, 0, sourceW, sourceH);
+      cropCtx.drawImage(
+        pdfCanvas,
+        sourceX, sourceY, sourceW, sourceH, // Source (Internal pixels)
+        0, 0, sourceW, sourceH              // Destination (Full res crop)
+      );
+    });
+
+    // --- QR Scanning ---
+    scanBtn.addEventListener('click', () => {
+      if (cropCanvas.width === 0) return;
+
+      const dataUrl = cropCanvas.toDataURL('image/png');
+      
+      QrScanner.scanImage(dataUrl /*, { returnDetailedScanResult: true }*/)
+        .then(result => {
+            linkArea.innerText = result; // Set the visible text
+            linkArea.href = result;      // Set the actual link
+            linkArea.classList.remove('link-error');
+        })
+        .catch(err => {
+          linkArea.innerText = "Kein QR-Code erkannt.";
+          linkArea.href = "#";
+          linkArea.classList.add('link-error');
+          console.log(err);
+        });
+    });
+
+    // --- File Handling ---
+    document.getElementById('file-selector').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const fileName = file.name.toLowerCase();
+
+      // Reset UI
+      selection.style.display = 'none';
+      linkArea.innerText = "";
+      linkArea.href = "#";
+      
+      if (fileName.endsWith('.pdf')) {
+        // Handle PDF
+        const arrayBuffer = await file.arrayBuffer();
+        pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+        currentPage = 1;
+        nav.style.display = 'flex'; // Show navigation
+        updatePageInfo();
+        renderPage(currentPage);
+      } else {
+        // Handle Image (jpg, png, webp, etc.)
+        pdfDoc = null; // Clear PDF reference
+        nav.style.display = 'none'; // Hide navigation for single images
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            // Set main canvas size to image size
+            pdfCanvas.width = img.width;
+            pdfCanvas.height = img.height;
+            // Draw image to the main canvas
+            pdfCtx.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+            pdfCtx.drawImage(img, 0, 0);
+          };
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // --- PDF page navigation ---
+    prevPageBtn.addEventListener('click', () => {
+      if (pdfDoc && currentPage > 1) {
+        currentPage--;
+        updatePageInfo();
+        renderPage(currentPage);
+      }
+    });
+
+    nextPageBtn.addEventListener('click', () => {
+      if (pdfDoc && currentPage < pdfDoc.numPages) {
+        currentPage++;
+        updatePageInfo();
+        renderPage(currentPage);
+      }
+    });
+
+    window.copyLinks = function() {
+      const text = document.getElementById('linkArea').innerText;
+
+      // Don't copy if it's the placeholder or an error
+      if (!text || text === "Kein QR-Code erkannt." || text === "Hier erscheinen die QR-Code-Links...") {
+        return;
+      }
+      
+      navigator.clipboard.writeText(text).then(() => {
+        // Visual feedback
+        const btn = document.querySelector('.copy-btn');
+        const originalColor = btn.style.color;
+        btn.style.color = "var(--success)";
+        setTimeout(() => btn.style.color = originalColor, 1000);
+      });
+    };
+
+    const scanFullBtn = document.getElementById('scanFullBtn');
+    scanFullBtn.addEventListener('click', () => {
+      // 1. Check if a document/image is actually loaded
+      if (pdfCanvas.width === 0) {
+        alert("Bitte lade zuerst ein Dokument oder Bild hoch.");
+        return;
+      }
+
+      // 2. Provide visual feedback
+      const originalText = scanFullBtn.innerText;
+      scanFullBtn.innerText = "Scanne...";
+      scanFullBtn.disabled = true;
+      linkArea.innerText = "Suche QR-Code im gesamten Bild...";
+
+      // 3. Scan the entire main canvas
+      // We pass the canvas directly to the scanner
+      QrScanner.scanImage(pdfCanvas)
+        .then(result => {
+          linkArea.innerText = result;
+          linkArea.href = result;
+          linkArea.classList.remove('link-error');
+        })
+        .catch(err => {
+          linkArea.innerText = "Kein QR-Code im Vollbild gefunden. Versuche es mit einem Ausschnitt.";
+          linkArea.href = "#";
+          linkArea.classList.add('link-error');
+          console.log(err);
+        })
+        .finally(() => {
+          // Restore button state
+          scanFullBtn.innerText = originalText;
+          scanFullBtn.disabled = false;
+        });
+    });
+  </script>
+</body>
+</html>
